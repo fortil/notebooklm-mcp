@@ -3,6 +3,8 @@ name = "nlm-mcp"
 version = "0.1.0"
 description = "Reusable MCP server for NotebookLM (Gemini Notebook) with pluggable backends"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "mcp>=2.3,<3",
