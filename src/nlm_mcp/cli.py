@@ -60,11 +60,21 @@ def _auth(args: argparse.Namespace) -> None:
     sys.exit(proc.returncode)
 
 
+_BANNER = """\
+ .-.-.-.  nlm-mcp {version}
+ |     |  MCP server for Google NotebookLM
+ |     |  notebooks - sources - chat - artifacts
+ '-----'
+"""
+
+
 def _doctor(args: argparse.Namespace) -> None:
+    from nlm_mcp import __version__
     from nlm_mcp.backends.notebooklm_py import storage_path_for
 
     settings = _settings(args)
     storage = storage_path_for(settings.profile)
+    print(_BANNER.format(version=__version__))
     print(f"profile:        {settings.profile}")
     print(f"sdk backend:    {settings.sdk_backend}")
     print(f"transport:      {settings.transport}")

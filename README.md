@@ -1,4 +1,16 @@
+<p align="center">
+  <img src=".github/assets/logo.svg" width="150" alt="nlm-mcp logo: a spiral notebook with Google-colored sparkles">
+</p>
+
 # nlm-mcp
+
+<p align="center">
+  <a href="https://github.com/fortil/nlm-mcp"><img src="https://img.shields.io/badge/github-fortil%2Fnlm--mcp-181717?logo=github" alt="github.com/fortil/nlm-mcp"></a>
+  <img src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="license MIT">
+  <img src="https://img.shields.io/badge/MCP-server-5F45AF" alt="MCP server">
+  <img src="https://img.shields.io/badge/uv-ready-de5fe9?logo=uv" alt="uv">
+</p>
 
 An MCP server for Google NotebookLM (now branded "Gemini Notebook"). It exposes 16 tools and 2 resources for notebooks, sources, grounded chat and generated artifacts. It talks to Google through the unofficial `notebooklm-py` client, which calls private endpoints. Google's terms of service may not allow that kind of access, so use it with an account you can afford to lose.
 
@@ -12,8 +24,8 @@ The tool layer never touches the SDK. All SDK code sits in `src/nlm_mcp/backends
 ## Install
 
 ```
-git clone <this repo> notebooklm-mcp
-cd notebooklm-mcp
+git clone https://github.com/fortil/nlm-mcp.git
+cd nlm-mcp
 uv sync --extra browser
 ```
 
@@ -133,3 +145,7 @@ Two seams to replace for a paid multi-tenant deployment: `BackendFactory` (where
 ## Roadmap
 
 Mind maps, video and slide decks, an enterprise Discovery Engine adapter, a Docker image, a PyPI release.
+
+## Maintainer
+
+William, [@fortil](https://github.com/fortil).
