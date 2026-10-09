@@ -1,0 +1,16 @@
+.venv/
+.auth/
+__pycache__/
+*.egg-info/
+dist/
+.mypy_cache/
+.ruff_cache/
+downloads/
+*.jsonl
+
+# local run artifacts, not part of the project
+PLAN.md
+.tasky/
+docs/notas-vault/
+.v2c/
+.video_agent/

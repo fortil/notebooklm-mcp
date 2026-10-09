@@ -1,0 +1,46 @@
+[project]
+name = "nlm-mcp"
+version = "0.1.0"
+description = "Reusable MCP server for NotebookLM (Gemini Notebook) with pluggable backends"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=2.3,<3",
+    "notebooklm-py>=0.8.4,<0.9",
+    "pydantic>=2.7,<3",
+]
+
+[project.optional-dependencies]
+browser = ["notebooklm-py[browser]"]
+headless = ["notebooklm-py[headless]"]
+cookies = ["notebooklm-py[cookies]"]
+
+[project.scripts]
+nlm-mcp = "nlm_mcp.cli:main"
+
+[dependency-groups]
+dev = ["ruff>=0.6", "mypy>=1.10"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nlm_mcp"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+files = ["src"]
+
+[[tool.mypy.overrides]]
+module = ["notebooklm", "notebooklm.*"]
+ignore_missing_imports = true
+follow_imports = "skip"

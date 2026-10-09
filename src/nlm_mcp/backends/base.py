@@ -1,0 +1,69 @@
+"""Backend and BackendFactory protocols. No SDK imports."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Literal, Protocol, runtime_checkable
+
+from nlm_mcp.models import (
+    AddSourceRequest,
+    Artifact,
+    ArtifactKindAny,
+    ChatAnswer,
+    DownloadedFile,
+    GenerateRequest,
+    Notebook,
+    Passage,
+    Source,
+    SourceState,
+    TaskStatus,
+    Usage,
+)
+
+
+@dataclass(frozen=True)
+class TenantContext:
+    tenant_id: str
+    profile: str
+    sdk_backend: Literal["web", "android"] = "web"
+
+
+@runtime_checkable
+class Backend(Protocol):
+    async def list_notebooks(self) -> list[Notebook]: ...
+    async def get_notebook(self, notebook_id: str) -> Notebook: ...
+    async def get_notebook_summary(self, notebook_id: str) -> str | None: ...
+    async def create_notebook(self, title: str) -> Notebook: ...
+    async def rename_notebook(self, notebook_id: str, title: str) -> Notebook: ...
+    async def delete_notebook(self, notebook_id: str) -> None: ...
+    async def list_sources(
+        self, notebook_id: str, state: SourceState | None = None
+    ) -> list[Source]: ...
+    async def get_source(self, notebook_id: str, source_id: str) -> Source: ...
+    async def get_source_text(self, notebook_id: str, source_id: str) -> str: ...
+    async def add_source(self, req: AddSourceRequest) -> Source: ...
+    async def remove_source(self, notebook_id: str, source_id: str) -> None: ...
+    async def search_sources(self, notebook_id: str, query: str, limit: int) -> list[Passage]: ...
+    async def ask(
+        self,
+        notebook_id: str,
+        question: str,
+        source_ids: list[str] | None,
+        conversation_id: str | None,
+    ) -> ChatAnswer: ...
+    async def generate_artifact(self, req: GenerateRequest) -> TaskStatus: ...
+    async def get_task(self, notebook_id: str, task_id: str) -> TaskStatus: ...
+    async def list_artifacts(
+        self, notebook_id: str, kind: ArtifactKindAny | None = None
+    ) -> list[Artifact]: ...
+    async def download_artifact(
+        self, notebook_id: str, artifact_id: str, dest_path: str
+    ) -> DownloadedFile: ...
+    async def get_usage(self) -> Usage: ...
+    async def close(self) -> None: ...
+
+
+@runtime_checkable
+class BackendFactory(Protocol):
+    async def open(self, tenant: TenantContext) -> Backend: ...
+    async def close(self) -> None: ...
