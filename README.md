@@ -39,8 +39,8 @@ Sessions are stored per profile in `~/.notebooklm/profiles/<profile>/storage_sta
 
 Authentication is delegated to the `notebooklm` CLI that ships with `notebooklm-py`:
 
-- `nlm-mcp auth login` runs `notebooklm login` for the selected profile.
-- `nlm-mcp auth status` runs `notebooklm auth check`. It is a local check; it exits 1 and prints `Run 'notebooklm login' to authenticate.` when the profile has no session.
+- `nlm-mcp auth login` runs `notebooklm login` for the selected profile and ends with a compact verdict on the saved session, so a broken capture (missing `SID` or `__Secure-1PSIDTS`) exits 1 instead of passing silently.
+- `nlm-mcp auth status` prints a compact local check of the saved session: cookies present, account, storage path. `--test` also fetches a live token from Google, `--raw` shows the SDK's own output instead.
 
 Arguments after `--` are passed through unchanged. `nlm-mcp doctor` prints the resolved settings and whether the session file exists.
 
@@ -97,6 +97,7 @@ Resources: `notebooklm://notebooks` and `notebooklm://notebooks/{notebook_id}/so
 | `NLM_MCP_ALLOW_LOCAL_FILES` | true on stdio, false on HTTP | Allow `add_source` with `kind=file` |
 | `NLM_MCP_MAX_CONCURRENT_RPCS` | `4` | Concurrent SDK calls |
 | `NLM_MCP_USAGE_LOG` | unset | JSONL file for usage events |
+| `NLM_MCP_LOG_LEVEL` | `WARNING` | stderr log level: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `NLM_MCP_TOKENS_FILE` | unset | Bearer token to tenant map, required for HTTP |
 
 ## Errors

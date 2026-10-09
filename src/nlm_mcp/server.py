@@ -41,7 +41,11 @@ def create_server(
     meter: UsageMeter | None = None,
     token_verifier: TokenVerifier | None = None,
 ) -> MCPServer:
-    logging.basicConfig(stream=sys.stderr, level=logging.INFO)
+    logging.basicConfig(
+        stream=sys.stderr,
+        level=settings.log_level,
+        format="%(levelname).1s %(name)s: %(message)s",
+    )
     meter = meter if meter is not None else build_meter(settings)
     factory = (
         factory

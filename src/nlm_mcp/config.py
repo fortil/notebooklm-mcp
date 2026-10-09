@@ -26,6 +26,7 @@ class Settings:
     max_concurrent_rpcs: int = 4
     usage_log: Path | None = None
     tokens_file: Path | None = None
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "WARNING"
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Settings:
@@ -66,6 +67,12 @@ class Settings:
         usage_log = e.get("NLM_MCP_USAGE_LOG")
         tokens_file = e.get("NLM_MCP_TOKENS_FILE")
 
+        raw_level = (e.get("NLM_MCP_LOG_LEVEL") or "WARNING").upper()
+        if raw_level not in ("DEBUG", "INFO", "WARNING", "ERROR"):
+            raise ValueError(
+                f"NLM_MCP_LOG_LEVEL must be DEBUG, INFO, WARNING or ERROR, got {raw_level!r}"
+            )
+
         return cls(
             profile=profile,
             sdk_backend=cast(Literal["web", "android"], sdk_backend),
@@ -78,6 +85,7 @@ class Settings:
             max_concurrent_rpcs=max_rpcs,
             usage_log=Path(usage_log).expanduser() if usage_log else None,
             tokens_file=Path(tokens_file).expanduser() if tokens_file else None,
+            log_level=cast(Literal["DEBUG", "INFO", "WARNING", "ERROR"], raw_level),
         )
 
     def validate_for_serve(self) -> None:
