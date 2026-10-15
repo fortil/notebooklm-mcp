@@ -8,7 +8,9 @@ license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "mcp>=2.3,<3",
-    "notebooklm-py>=0.8.4,<0.9",
+    # TODO: back to "notebooklm-py[headless]>=0.8.5,<0.9" once released. 0.8.4 saves
+    # an empty session on fresh logins (teng-lin/notebooklm-py#2478, fixed on main).
+    "notebooklm-py[headless] @ git+https://github.com/teng-lin/notebooklm-py@2aff0fcb27c1be734d720b409696fcd74c4ba604",
     "pydantic>=2.7,<3",
 ]
 
@@ -26,6 +28,9 @@ dev = ["ruff>=0.6", "mypy>=1.10"]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/nlm_mcp"]

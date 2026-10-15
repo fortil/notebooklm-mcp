@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
 
 from nlm_mcp.config import Settings
@@ -82,6 +83,13 @@ def _auth_check(settings: Settings, extra: list[str]) -> tuple[int, dict[str, An
     return proc.returncode, data
 
 
+def _has_master_token(data: dict[str, Any]) -> bool:
+    from notebooklm.paths import master_token_path_for
+
+    storage = data.get("storage_path")
+    return isinstance(storage, str) and master_token_path_for(Path(storage)).exists()
+
+
 def _render_status(data: dict[str, Any]) -> bool:
     """Print a compact status block. Returns True when the session is usable."""
     from nlm_mcp import __version__
@@ -102,12 +110,17 @@ def _render_status(data: dict[str, Any]) -> bool:
     print(f"cookies   SID {sid_state}, __Secure-1PSIDTS {psidts_state}")
     if token_fetch is True:
         print("token     fetched from Google ok")
+    if _has_master_token(data):
+        print("renewal   automatic (master token)")
+    else:
+        print("renewal   manual (run auth login again when it expires)")
     if not ok:
         found = (data.get("details") or {}).get("cookies_by_domain") or {}
         captured = [f"{name} ({domain})" for domain, names in found.items() for name in names]
         if captured:
             print(f"captured  {', '.join(captured)}")
-        print("fix       uv run nlm-mcp auth login")
+        # only anonymous cookies on disk means a stale profile; start clean
+        print(f"fix       nlm-mcp auth login{' --fresh' if captured and not sid else ''}")
     return ok
 
 
@@ -115,13 +128,26 @@ def _auth(args: argparse.Namespace) -> None:
     settings = _settings(args)
     extra = [a for a in (args.extra or []) if a != "--"]
     if args.action == "login":
+        login = ["login"]
+        if args.fresh:
+            login.append("--fresh")
+        if args.durable:
+            if not args.account:
+                sys.exit("nlm-mcp: --durable needs --account EMAIL")
+            print(
+                "note: --durable stores a Google master token on this machine (mode 0600). "
+                "It grants full access to the account; keep it off shared machines."
+            )
+            login += ["--master-token", "--account", args.account]
         # The SDK owns the interactive browser flow; its output goes through
-        # untouched and the verdict below is the last thing on screen.
+        # untouched and the verdict below is the last thing on screen. The
+        # verdict uses a live token fetch: cookies on disk can look complete
+        # and still be rejected by Google.
         proc = subprocess.run(
-            [sys.executable, "-m", "notebooklm", "--profile", settings.profile, "login", *extra],
+            [sys.executable, "-m", "notebooklm", "--profile", settings.profile, *login, *extra],
             check=False,
         )
-        _, data = _auth_check(settings, [])
+        _, data = _auth_check(settings, ["--test"])
         if data is None:
             sys.exit(proc.returncode)
         print()
@@ -185,8 +211,16 @@ def _parser() -> argparse.ArgumentParser:
     auth.add_argument("--profile")
     auth.add_argument("--test", action="store_true", help="status: also fetch a token from Google")
     auth.add_argument("--raw", action="store_true", help="status: show the SDK's own output")
-    auth.add_argument("extra", nargs=argparse.REMAINDER)
-    auth.set_defaults(func=_auth)
+    auth.add_argument(
+        "--fresh", action="store_true", help="login: discard the saved browser profile first"
+    )
+    auth.add_argument(
+        "--durable",
+        action="store_true",
+        help="login: also save a master token so expired cookies renew on their own",
+    )
+    auth.add_argument("--account", help="login --durable: Google account email")
+    auth.set_defaults(func=_auth, extra=[])
 
     doctor = sub.add_parser("doctor", help="print resolved settings and session file state")
     doctor.add_argument("--profile")
@@ -195,5 +229,15 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
+    argv = sys.argv[1:] if argv is None else argv
+    # everything after "--" goes to the SDK untouched (auth login -- --browser chrome)
+    extra: list[str] = []
+    if "--" in argv:
+        cut = argv.index("--")
+        argv, extra = argv[:cut], argv[cut + 1 :]
     args = _parser().parse_args(argv)
+    if extra:
+        if args.command != "auth":
+            sys.exit(f"nlm-mcp: '--' passthrough only works with auth, got: {' '.join(extra)}")
+        args.extra = extra
     args.func(args)

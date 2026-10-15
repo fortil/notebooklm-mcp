@@ -36,4 +36,6 @@ There is no test suite yet. The check that matters is the end-to-end scenario ag
 
 - `NotebookLmPyBackend` has not been run against a real account. Unverified: `GenerationStatus.metadata["artifact_id"]`, `report_format == "study_guide"`, the `SourceType` names.
 - `doctor` exits with 2, not 0, when the environment is invalid.
+- `notebooklm-py` is pinned to commit `2aff0fc` on its `main` branch, because 0.8.4 saves an empty session on fresh logins (teng-lin/notebooklm-py#2478). Switch back to `notebooklm-py[headless]>=0.8.5,<0.9` when that release ships; the git pin blocks a PyPI upload.
+- `auth login --durable` (master token through Google's EmbeddedSetup page) has not been tried against a real account.
 - Out of scope for now: Docker, CI, PyPI release, REST bridge, `mind_map`.

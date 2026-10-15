@@ -35,14 +35,31 @@ uv sync --extra browser
 uv run nlm-mcp auth login -- --browser chrome
 ```
 
+A Chrome window opens on Google's sign-in page. Sign in, and the command ends with a verdict: `session ok` plus your account email, or `session broken` with exit code 1. The verdict comes from a live token fetch, so a session that only looks complete on disk still fails here. Without Chrome installed, drop `-- --browser chrome` and run `uv run playwright install chromium` once to use the bundled browser.
+
 Sessions are stored per profile in `~/.notebooklm/profiles/<profile>/storage_state.json` (override the root with `NOTEBOOKLM_HOME`).
 
-Authentication is delegated to the `notebooklm` CLI that ships with `notebooklm-py`:
+### Cookies expire
 
-- `nlm-mcp auth login` runs `notebooklm login` for the selected profile and ends with a compact verdict on the saved session, so a broken capture (missing `SID` or `__Secure-1PSIDTS`) exits 1 instead of passing silently.
-- `nlm-mcp auth status` prints a compact local check of the saved session: cookies present, account, storage path. `--test` also fetches a live token from Google, `--raw` shows the SDK's own output instead.
+Google session cookies last days to weeks. When tools start failing with `AUTH_REQUIRED`, run `auth login` again. To skip that, log in once in durable mode:
 
-Arguments after `--` are passed through unchanged. `nlm-mcp doctor` prints the resolved settings and whether the session file exists.
+```
+uv run nlm-mcp auth login --durable --account you@gmail.com -- --browser chrome
+```
+
+This saves a Google master token next to the session, and the SDK uses it to get fresh cookies when the old ones expire. `auth status` shows `renewal automatic` when it is in place. The master token gives full access to the Google account and is stored with mode 0600. Do not use durable mode on a shared machine.
+
+### Other auth commands
+
+- `nlm-mcp auth status` prints the saved session: cookies, account, storage path and renewal mode. `--test` also fetches a live token from Google, `--raw` shows the SDK's own output.
+- `nlm-mcp doctor` prints the resolved settings and whether the session file exists.
+- Arguments after `--` go to `notebooklm login` unchanged.
+
+### When login fails
+
+- `session broken` with only `NID` and `__Host-GAPS` captured: the profile holds a stale anonymous session. Run `uv run nlm-mcp auth login --fresh -- --browser chrome`.
+- Google says the browser may not be secure: use `-- --browser chrome` (your installed Chrome) instead of the bundled Chromium.
+- No browser window works at all: sign in at https://notebook.google.com in Firefox, then `uv sync --extra cookies` and `uv run notebooklm login --browser-cookies firefox`. Importing from Chrome also works, but on macOS the terminal needs Full Disk Access to read Chrome's cookies, and on Windows Chrome 127+ blocks it.
 
 ## Client configuration
 
@@ -106,7 +123,7 @@ Tool errors start with a code in brackets.
 
 | Code | Meaning |
 |---|---|
-| `AUTH_REQUIRED` | No valid session; run `notebooklm login` |
+| `AUTH_REQUIRED` | No valid session; run `nlm-mcp auth login` |
 | `RATE_LIMITED` | Google throttled the request; retryable |
 | `QUOTA_EXCEEDED` | Notebook or source limit reached |
 | `NOT_FOUND` | Unknown notebook, source or artifact |
@@ -141,7 +158,7 @@ Two seams to replace for a paid multi-tenant deployment: `BackendFactory` (where
 - `create_notebook` is not idempotent. After an error, call `list_notebooks` with the title before retrying.
 - A `TIMEOUT` does not mean the operation failed; check with `get_task` or `list_artifacts`.
 - Free accounts have low notebook, source and generation quotas. `get_usage` shows them.
-- Sessions expire; run `nlm-mcp auth login` again when you see `AUTH_REQUIRED`.
+- Sessions expire. Run `nlm-mcp auth login` again when you see `AUTH_REQUIRED`, or use `--durable` once (see "Cookies expire").
 
 ## Roadmap
 
