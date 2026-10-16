@@ -4,8 +4,8 @@ Run with:  uv run python scripts/e2e_fake.py
 
 The same file plays two roles. Without arguments it is the client: it spawns
 itself as an MCP stdio server (`--serve-fake`) wired to FakeBackendFactory,
-then runs the full scenario (16 tools, 2 resources, one error path) over real
-JSON-RPC. No Google account is needed.
+then runs the full scenario (19 tools, 2 resources, several error paths) over
+real JSON-RPC. No Google account is needed.
 
 Exit code 0 = every step passed.
 """
@@ -35,6 +35,9 @@ EXPECTED_TOOLS = {
     "get_task",
     "list_artifacts",
     "download_artifact",
+    "get_artifact_options",
+    "get_share_status",
+    "share_notebook",
     "get_usage",
 }
 
@@ -94,7 +97,15 @@ async def run_scenario() -> int:
 
             tools = (await session.list_tools()).tools
             names = {t.name for t in tools}
-            check(names == EXPECTED_TOOLS, "list_tools reports the 16 tools", str(names))
+            check(names == EXPECTED_TOOLS, "list_tools reports the 19 tools", str(names))
+
+            generate = next(t for t in tools if t.name == "generate_artifact")
+            schema = json.dumps(generate.input_schema)
+            new_kinds = ("slide_deck", "video", "mind_map", "infographic", "data_table")
+            check(
+                all(k in schema for k in new_kinds),
+                "generate_artifact schema lists every artifact kind",
+            )
 
             delete = next(t for t in tools if t.name == "delete_notebook")
             check(
@@ -215,6 +226,72 @@ async def run_scenario() -> int:
                 json.dumps(task),
             )
 
+            deck = payload(
+                await session.call_tool(
+                    "generate_artifact",
+                    {
+                        "notebook_id": nb_id,
+                        "kind": "slide_deck",
+                        "instructions": "For a technical audience",
+                        "language": "en",
+                        "options": {"format": "presenter_slides", "length": "short"},
+                    },
+                )
+            )
+            deck_task = deck["task_id"]
+            check(
+                deck["state"] == "pending",
+                "generate_artifact slide_deck returns pending task",
+                json.dumps(deck),
+            )
+
+            chart = payload(
+                await session.call_tool(
+                    "generate_artifact",
+                    {
+                        "notebook_id": nb_id,
+                        "kind": "infographic",
+                        "options": {"orientation": "landscape", "style": "professional"},
+                    },
+                )
+            )
+            check(chart["state"] == "pending", "generate_artifact infographic", json.dumps(chart))
+
+            mind = payload(
+                await session.call_tool(
+                    "generate_artifact", {"notebook_id": nb_id, "kind": "mind_map"}
+                )
+            )
+            check(
+                mind["state"] == "completed" and bool(mind["artifact_id"]),
+                "generate_artifact mind_map (note_backed) completes synchronously",
+                json.dumps(mind),
+            )
+
+            bad = await session.call_tool(
+                "generate_artifact", {"notebook_id": nb_id, "kind": "hologram"}
+            )
+            bad_text = bad.content[0].text if bad.content else ""
+            check(
+                bool(bad.is_error)
+                and "audio_overview" in bad_text
+                and "slide_deck" in bad_text
+                and "data_table" in bad_text,
+                "unknown kind is rejected and the error lists the valid kinds",
+                bad_text[:200],
+            )
+
+            bad_opt = await session.call_tool(
+                "generate_artifact",
+                {"notebook_id": nb_id, "kind": "data_table", "options": {"format": "pdf"}},
+            )
+            bad_opt_text = bad_opt.content[0].text if bad_opt.content else ""
+            check(
+                bool(bad_opt.is_error) and "[INVALID_ARGUMENT]" in bad_opt_text,
+                "unknown option for kind fails with INVALID_ARGUMENT",
+                bad_opt_text[:160],
+            )
+
             first = payload(
                 await session.call_tool("get_task", {"notebook_id": nb_id, "task_id": task_id})
             )
@@ -232,12 +309,36 @@ async def run_scenario() -> int:
                 "get_task second poll = completed",
             )
 
+            deck_done = payload(
+                await session.call_tool("get_task", {"notebook_id": nb_id, "task_id": deck_task})
+            )
+            deck_done = payload(
+                await session.call_tool("get_task", {"notebook_id": nb_id, "task_id": deck_task})
+            )
+            check(
+                deck_done["state"] == "completed" and bool(deck_done["artifact_id"]),
+                "slide_deck task completes",
+                json.dumps(deck_done),
+            )
+
             artifacts = payload(await session.call_tool("list_artifacts", {"notebook_id": nb_id}))[
                 "items"
             ]
+            kinds = {a["kind"] for a in artifacts}
             check(
-                len(artifacts) == 1 and artifacts[0]["kind"] == "quiz",
-                "list_artifacts shows the quiz",
+                kinds == {"quiz", "slide_deck", "infographic", "mind_map"},
+                "list_artifacts shows every generated kind",
+                str(kinds),
+            )
+
+            decks = payload(
+                await session.call_tool(
+                    "list_artifacts", {"notebook_id": nb_id, "kind": "slide_deck"}
+                )
+            )["items"]
+            check(
+                len(decks) == 1 and decks[0]["kind"] == "slide_deck",
+                "list_artifacts filters by kind",
             )
 
             dl = payload(
@@ -250,6 +351,66 @@ async def run_scenario() -> int:
                 dl_path.is_file() and dl_path.parent == downloads.resolve(),
                 "download_artifact writes file",
                 dl["path"],
+            )
+
+            deck_dl = payload(
+                await session.call_tool(
+                    "download_artifact",
+                    {
+                        "notebook_id": nb_id,
+                        "artifact_id": deck_done["artifact_id"],
+                        "format": "pptx",
+                    },
+                )
+            )
+            deck_dl_path = Path(deck_dl["path"])
+            check(
+                deck_dl_path.suffix == ".pptx" and deck_dl_path.is_file(),
+                "download_artifact slide_deck pptx",
+                deck_dl["path"],
+            )
+
+            bad_fmt = await session.call_tool(
+                "download_artifact",
+                {"notebook_id": nb_id, "artifact_id": done["artifact_id"], "format": "pptx"},
+            )
+            bad_fmt_text = bad_fmt.content[0].text if bad_fmt.content else ""
+            check(
+                bool(bad_fmt.is_error) and "[INVALID_ARGUMENT]" in bad_fmt_text,
+                "download_artifact rejects format for kind without one",
+                bad_fmt_text[:160],
+            )
+
+            options = payload(await session.call_tool("get_artifact_options", {}))
+            check(
+                bool(options.get("audio")) and bool(options.get("slide_deck")),
+                "get_artifact_options returns the option tables",
+                json.dumps(options)[:120],
+            )
+
+            share = payload(
+                await session.call_tool(
+                    "share_notebook", {"notebook_id": nb_id, "public": True}
+                )
+            )
+            check(
+                share["is_public"] and bool(share["share_url"]),
+                "share_notebook turns the public link on",
+                json.dumps(share),
+            )
+            status = payload(await session.call_tool("get_share_status", {"notebook_id": nb_id}))
+            check(status["access"] == "anyone_with_link", "get_share_status reads back")
+
+            unshare = payload(
+                await session.call_tool(
+                    "share_notebook",
+                    {"notebook_id": nb_id, "public": False, "view_level": "chat_only"},
+                )
+            )
+            check(
+                not unshare["is_public"] and unshare["view_level"] == "chat_only",
+                "share_notebook off + view_level",
+                json.dumps(unshare),
             )
 
             usage = payload(await session.call_tool("get_usage", {}))

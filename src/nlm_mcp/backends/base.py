@@ -9,11 +9,14 @@ from nlm_mcp.models import (
     AddSourceRequest,
     Artifact,
     ArtifactKindAny,
+    ArtifactOptions,
     ChatAnswer,
     DownloadedFile,
     GenerateRequest,
     Notebook,
     Passage,
+    ShareLevel,
+    ShareStatus,
     Source,
     SourceState,
     TaskStatus,
@@ -57,8 +60,13 @@ class Backend(Protocol):
         self, notebook_id: str, kind: ArtifactKindAny | None = None
     ) -> list[Artifact]: ...
     async def download_artifact(
-        self, notebook_id: str, artifact_id: str, dest_path: str
+        self, notebook_id: str, artifact_id: str, dest_path: str, output_format: str | None = None
     ) -> DownloadedFile: ...
+    async def get_artifact_options(self, notebook_id: str | None = None) -> ArtifactOptions: ...
+    async def get_share_status(self, notebook_id: str) -> ShareStatus: ...
+    async def set_notebook_public(
+        self, notebook_id: str, public: bool, view_level: ShareLevel | None
+    ) -> ShareStatus: ...
     async def get_usage(self) -> Usage: ...
     async def close(self) -> None: ...
 

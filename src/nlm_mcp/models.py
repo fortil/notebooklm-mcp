@@ -3,13 +3,24 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SourceState = Literal["preparing", "processing", "ready", "error", "unknown"]
 SourceKind = Literal["url", "youtube", "text", "file", "drive", "unknown"]
-ArtifactKind = Literal["audio_overview", "report", "study_guide", "quiz", "flashcards"]
+ArtifactKind = Literal[
+    "audio_overview",
+    "report",
+    "study_guide",
+    "quiz",
+    "flashcards",
+    "video",
+    "mind_map",
+    "infographic",
+    "slide_deck",
+    "data_table",
+]
 ArtifactKindAny = Literal[
     "audio_overview",
     "report",
@@ -24,6 +35,10 @@ ArtifactKindAny = Literal[
     "unknown",
 ]
 TaskState = Literal["pending", "in_progress", "completed", "failed", "not_found", "unknown"]
+
+#: Every artifact kind `generate_artifact` accepts, derived from the Literal so
+#: the schema, the descriptions and the backend dispatch cannot drift apart.
+GENERATABLE_KINDS: tuple[str, ...] = get_args(ArtifactKind)
 
 
 class _Model(BaseModel):
@@ -168,3 +183,45 @@ class Usage(_Model):
     source_limit: int | None
     windows: list[UsageWindow]
     session_ok: bool
+
+
+ShareLevel = Literal["full_notebook", "chat_only"]
+ShareAccess = Literal["restricted", "anyone_with_link"]
+
+
+class SharedUser(_Model):
+    email: str
+    permission: Literal["owner", "editor", "viewer", "unknown"]
+    display_name: str | None
+
+
+class ShareStatus(_Model):
+    notebook_id: str
+    is_public: bool
+    access: ShareAccess
+    view_level: ShareLevel
+    share_url: str | None
+    shared_users: list[SharedUser]
+    is_public_sharing_allowed: bool | None
+
+
+class OptionChoice(_Model):
+    code: int
+    value: str
+    title: str
+    description: str
+
+
+class ReportPreset(_Model):
+    title: str
+    description: str
+    directive: str
+
+
+class ArtifactOptions(_Model):
+    """Studio "Customize" tables: the option values generate_artifact accepts."""
+
+    audio: list[OptionChoice]
+    video: list[OptionChoice]
+    slide_deck: list[OptionChoice]
+    reports: list[ReportPreset]

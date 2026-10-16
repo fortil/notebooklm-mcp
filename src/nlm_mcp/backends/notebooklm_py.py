@@ -13,10 +13,19 @@ from notebooklm import (
     ArtifactType,
     AudioFormat,
     AudioLength,
+    InfographicDetail,
+    InfographicOrientation,
+    InfographicStyle,
+    MindMapKind,
     NotebookLMClient,
     QuizDifficulty,
     QuizQuantity,
     ReportFormat,
+    ShareViewLevel,
+    SlideDeckFormat,
+    SlideDeckLength,
+    VideoFormat,
+    VideoStyle,
 )
 from notebooklm import exceptions as nlm_exc
 from notebooklm.paths import get_storage_path
@@ -24,15 +33,22 @@ from notebooklm.paths import get_storage_path
 from nlm_mcp.backends.base import Backend, BackendFactory, TenantContext
 from nlm_mcp.errors import LOGIN_HINT, NlmError, invalid_argument, unsupported
 from nlm_mcp.models import (
+    GENERATABLE_KINDS,
     AddSourceRequest,
     Artifact,
     ArtifactKindAny,
+    ArtifactOptions,
     ChatAnswer,
     Citation,
     DownloadedFile,
     GenerateRequest,
     Notebook,
+    OptionChoice,
     Passage,
+    ReportPreset,
+    SharedUser,
+    ShareLevel,
+    ShareStatus,
     Source,
     SourceState,
     TaskState,
@@ -214,6 +230,10 @@ def _task(g: Any) -> TaskStatus:
     state = _enum_value(g.status)
     metadata = g.metadata or {}
     artifact_id = metadata.get("artifact_id")
+    if not artifact_id and state == "completed":
+        # The API returns a single id that is both the polling task id and the
+        # artifact id once complete; metadata does not carry a separate one.
+        artifact_id = g.task_id
     return TaskStatus(
         task_id=g.task_id,
         state=state if state in _TASK_STATES else "unknown",  # type: ignore[arg-type]
@@ -242,6 +262,40 @@ def _usage(tenant_id: str, summary: Any, limits: Any, notebooks_used: int) -> Us
         source_limit=limits.source_limit,
         windows=windows,
         session_ok=True,
+    )
+
+
+_DOWNLOAD_FORMATS: dict[str, frozenset[str]] = {
+    "slide_deck": frozenset({"pdf", "pptx"}),
+    "quiz": frozenset({"json", "markdown", "html"}),
+    "flashcards": frozenset({"json", "markdown", "html"}),
+}
+_DEFAULT_DOWNLOAD_FORMAT = {"quiz": "json", "flashcards": "json", "slide_deck": "pdf"}
+
+_SHARE_PERMISSIONS = {"owner", "editor", "viewer"}
+
+
+def _share_status(s: Any, notebook_id: str) -> ShareStatus:
+    access = _enum_name(s.access)
+    view_level = _enum_name(s.view_level)
+    users: list[SharedUser] = []
+    for u in s.shared_users or []:
+        permission = _enum_name(u.permission)
+        users.append(
+            SharedUser(
+                email=u.email,
+                permission=permission if permission in _SHARE_PERMISSIONS else "unknown",  # type: ignore[arg-type]
+                display_name=u.display_name,
+            )
+        )
+    return ShareStatus(
+        notebook_id=notebook_id,
+        is_public=bool(s.is_public),
+        access=access if access in ("restricted", "anyone_with_link") else "restricted",  # type: ignore[arg-type]
+        view_level=view_level if view_level in ("full_notebook", "chat_only") else "full_notebook",  # type: ignore[arg-type]
+        share_url=s.share_url,
+        shared_users=users,
+        is_public_sharing_allowed=s.is_public_sharing_allowed,
     )
 
 
@@ -318,9 +372,9 @@ class NotebookLmPyBackend(Backend):
             src = await s.add_url(nb, req.url, title=req.title, wait=req.wait, wait_timeout=120)
         elif req.kind == "text":
             assert req.text is not None
-            src = await s.add_text(
-                nb, req.title or "Pasted text", req.text, wait=req.wait, idempotent=True
-            )
+            # No idempotent=True: the SDK rejects it for text sources (no
+            # reliable server-side dedupe key), so retried adds can duplicate.
+            src = await s.add_text(nb, req.title or "Pasted text", req.text, wait=req.wait)
         elif req.kind == "file":
             assert req.path is not None
             src = await s.add_file(nb, req.path, title=req.title, wait=req.wait)
@@ -372,15 +426,40 @@ class NotebookLmPyBackend(Backend):
                 audio_format=_enum_option(AudioFormat, opt, "format"),
                 audio_length=_enum_option(AudioLength, opt, "length"),
             )
+        elif req.kind == "video":
+            _check_options(opt, {"format", "style", "style_prompt"})
+            video_format = _enum_option(VideoFormat, opt, "format")
+            if video_format is VideoFormat.CINEMATIC:
+                _check_options(opt, set())
+                g = await a.generate_cinematic_video(
+                    nb, req.source_ids, req.language, req.instructions
+                )
+            else:
+                g = await a.generate_video(
+                    nb,
+                    req.source_ids,
+                    req.language,
+                    req.instructions,
+                    video_format=video_format,
+                    video_style=_enum_option(VideoStyle, opt, "style"),
+                    style_prompt=opt.get("style_prompt"),
+                )
         elif req.kind == "report":
-            _check_options(opt, {"format"})
+            _check_options(opt, {"format", "custom_prompt"})
+            report_format = _enum_option(ReportFormat, opt, "format") or ReportFormat.BRIEFING_DOC
+            if report_format == ReportFormat.STUDY_GUIDE:
+                raise invalid_argument("use kind='study_guide' instead of format='study_guide'")
+            custom_prompt = opt.get("custom_prompt")
+            if custom_prompt is not None and report_format != ReportFormat.CUSTOM:
+                raise invalid_argument(
+                    "option 'custom_prompt' is only valid with format='custom'"
+                )
             g = await a.generate_report(
                 nb,
-                report_format=(
-                    _enum_option(ReportFormat, opt, "format") or ReportFormat.BRIEFING_DOC
-                ),
+                report_format=report_format,
                 source_ids=req.source_ids,
                 language=req.language,
+                custom_prompt=custom_prompt,
                 extra_instructions=req.instructions,
             )
         elif req.kind == "study_guide":
@@ -388,7 +467,7 @@ class NotebookLmPyBackend(Backend):
             g = await a.generate_study_guide(
                 nb, req.source_ids, req.language, extra_instructions=req.instructions
             )
-        else:
+        elif req.kind == "quiz" or req.kind == "flashcards":
             _check_options(opt, {"quantity", "difficulty"})
             fn = a.generate_quiz if req.kind == "quiz" else a.generate_flashcards
             g = await fn(
@@ -398,7 +477,76 @@ class NotebookLmPyBackend(Backend):
                 quantity=_enum_option(QuizQuantity, opt, "quantity"),
                 difficulty=_enum_option(QuizDifficulty, opt, "difficulty"),
             )
+        elif req.kind == "mind_map":
+            return await self._generate_mind_map(req)
+        elif req.kind == "infographic":
+            _check_options(opt, {"orientation", "detail", "style"})
+            g = await a.generate_infographic(
+                nb,
+                req.source_ids,
+                req.language,
+                req.instructions,
+                orientation=_enum_option(InfographicOrientation, opt, "orientation"),
+                detail_level=_enum_option(InfographicDetail, opt, "detail"),
+                style=_enum_option(InfographicStyle, opt, "style"),
+            )
+        elif req.kind == "slide_deck":
+            _check_options(opt, {"format", "length"})
+            g = await a.generate_slide_deck(
+                nb,
+                req.source_ids,
+                req.language,
+                req.instructions,
+                slide_format=_enum_option(SlideDeckFormat, opt, "format"),
+                slide_length=_enum_option(SlideDeckLength, opt, "length"),
+            )
+        elif req.kind == "data_table":
+            _check_options(opt, set())
+            g = await a.generate_data_table(nb, req.source_ids, req.language, req.instructions)
+        else:
+            # Unreachable while GenerateRequest.kind stays a Literal over
+            # GENERATABLE_KINDS; kept so an unknown kind can never silently
+            # fall through to another generator.
+            raise invalid_argument(
+                f"unsupported artifact kind {req.kind!r}; "
+                f"supported kinds: {', '.join(GENERATABLE_KINDS)}"
+            )
         return _task(g)
+
+    async def _generate_mind_map(self, req: GenerateRequest) -> TaskStatus:
+        """Generate a mind map. Note-backed is synchronous, interactive is a task.
+
+        The note-backed variant (GENERATE_MIND_MAP) returns the finished tree
+        in one call, so the honest task state is already `completed` with the
+        note id as both task and artifact id. The interactive variant is a
+        regular CREATE_ARTIFACT task: return pending and let get_task poll.
+        """
+        _check_options(req.options, {"variant"})
+        variant = req.options.get("variant", "note_backed")
+        if variant == "interactive":
+            mm = await self._c.mind_maps.generate(
+                req.notebook_id,
+                req.source_ids,
+                kind=MindMapKind.INTERACTIVE,
+                language=req.language,
+                instructions=req.instructions,
+                wait=False,
+            )
+            return TaskStatus(
+                task_id=mm.id, state="pending", artifact_id=None, error=None
+            )
+        if variant != "note_backed":
+            raise invalid_argument(
+                f"invalid value {variant!r} for option 'variant' (note_backed or interactive)"
+            )
+        res = await self._c.artifacts.generate_mind_map(
+            req.notebook_id, req.source_ids, req.language, req.instructions
+        )
+        if not res.note_id:
+            raise NlmError("UPSTREAM", "mind map generated but the SDK returned no note id")
+        return TaskStatus(
+            task_id=res.note_id, state="completed", artifact_id=res.note_id, error=None
+        )
 
     @_guard
     async def get_task(self, notebook_id: str, task_id: str) -> TaskStatus:
@@ -415,27 +563,97 @@ class NotebookLmPyBackend(Backend):
 
     @_guard
     async def download_artifact(
-        self, notebook_id: str, artifact_id: str, dest_path: str
+        self,
+        notebook_id: str,
+        artifact_id: str,
+        dest_path: str,
+        output_format: str | None = None,
     ) -> DownloadedFile:
         a = self._c.artifacts
         art = await a.get(notebook_id, artifact_id)
+        wire_kind = _enum_value(art.kind)
+        fmt = output_format or _DEFAULT_DOWNLOAD_FORMAT.get(wire_kind)
+        allowed = _DOWNLOAD_FORMATS.get(wire_kind)
+        if allowed is not None:
+            if fmt is None or fmt not in allowed:
+                raise invalid_argument(
+                    f"invalid output_format {fmt!r} for {wire_kind}; "
+                    f"use one of: {', '.join(sorted(allowed))}"
+                )
+        elif output_format is not None:
+            raise invalid_argument(f"{wire_kind} artifacts take no output_format")
         os.makedirs(os.path.dirname(dest_path) or ".", exist_ok=True)
         if art.kind == ArtifactType.AUDIO:
             path = await a.download_audio(notebook_id, dest_path, artifact_id=artifact_id)
+        elif art.kind == ArtifactType.VIDEO:
+            path = await a.download_video(notebook_id, dest_path, artifact_id=artifact_id)
         elif art.kind == ArtifactType.REPORT:
             path = await a.download_report(notebook_id, dest_path, artifact_id=artifact_id)
         elif art.kind == ArtifactType.QUIZ:
             path = await a.download_quiz(
-                notebook_id, dest_path, artifact_id=artifact_id, output_format="json"
+                notebook_id, dest_path, artifact_id=artifact_id, output_format=fmt or "json"
             )
         elif art.kind == ArtifactType.FLASHCARDS:
             path = await a.download_flashcards(
-                notebook_id, dest_path, artifact_id=artifact_id, output_format="json"
+                notebook_id, dest_path, artifact_id=artifact_id, output_format=fmt or "json"
             )
+        elif art.kind == ArtifactType.MIND_MAP:
+            path = await a.download_mind_map(notebook_id, dest_path, artifact_id=artifact_id)
+        elif art.kind == ArtifactType.INFOGRAPHIC:
+            path = await a.download_infographic(notebook_id, dest_path, artifact_id=artifact_id)
+        elif art.kind == ArtifactType.SLIDE_DECK:
+            path = await a.download_slide_deck(
+                notebook_id, dest_path, artifact_id=artifact_id, output_format=fmt or "pdf"
+            )
+        elif art.kind == ArtifactType.DATA_TABLE:
+            path = await a.download_data_table(notebook_id, dest_path, artifact_id=artifact_id)
         else:
-            raise unsupported(f"download of {_enum_value(art.kind)} not supported in v1")
+            raise unsupported(f"download of {wire_kind} not supported")
         out = str(path)
         return DownloadedFile(artifact_id=artifact_id, path=out, bytes=os.path.getsize(out))
+
+    @_guard
+    async def get_artifact_options(self, notebook_id: str | None = None) -> ArtifactOptions:
+        choices = await self._c.artifacts.get_customization_choices(notebook_id)
+
+        def option(choice: Any, enum_cls: Any) -> OptionChoice:
+            try:
+                value = _enum_name(enum_cls(choice.code))
+            except ValueError:
+                value = "unknown"
+            return OptionChoice(
+                code=choice.code,
+                value=value,
+                title=choice.title,
+                description=choice.description,
+            )
+
+        return ArtifactOptions(
+            audio=[option(c, AudioFormat) for c in choices.audio],
+            video=[option(c, VideoFormat) for c in choices.video],
+            slide_deck=[option(c, SlideDeckFormat) for c in choices.slide_deck],
+            reports=[
+                ReportPreset(
+                    title=p.report_type, description=p.description, directive=p.directive
+                )
+                for p in choices.reports
+            ],
+        )
+
+    @_guard
+    async def get_share_status(self, notebook_id: str) -> ShareStatus:
+        return _share_status(await self._c.sharing.get_status(notebook_id), notebook_id)
+
+    @_guard
+    async def set_notebook_public(
+        self, notebook_id: str, public: bool, view_level: ShareLevel | None
+    ) -> ShareStatus:
+        status = await self._c.sharing.set_public(notebook_id, public)
+        if view_level is not None:
+            status = await self._c.sharing.set_view_level(
+                notebook_id, ShareViewLevel[view_level.upper()]
+            )
+        return _share_status(status, notebook_id)
 
     @_guard
     async def get_usage(self) -> Usage:

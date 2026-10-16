@@ -5,22 +5,40 @@ from __future__ import annotations
 import os
 
 from nlm_mcp.backends.base import Backend, TenantContext
-from nlm_mcp.errors import not_found
+from nlm_mcp.errors import invalid_argument, not_found
 from nlm_mcp.models import (
     AddSourceRequest,
     Artifact,
     ArtifactKindAny,
+    ArtifactOptions,
     ChatAnswer,
     Citation,
     DownloadedFile,
     GenerateRequest,
     Notebook,
+    OptionChoice,
     Passage,
+    ReportPreset,
+    ShareLevel,
+    ShareStatus,
     Source,
     SourceState,
     TaskStatus,
     Usage,
 )
+
+_KIND_OPTIONS: dict[str, set[str]] = {
+    "audio_overview": {"format", "length"},
+    "video": {"format", "style", "style_prompt"},
+    "report": {"format", "custom_prompt"},
+    "study_guide": set(),
+    "quiz": {"quantity", "difficulty"},
+    "flashcards": {"quantity", "difficulty"},
+    "mind_map": {"variant"},
+    "infographic": {"orientation", "detail", "style"},
+    "slide_deck": {"format", "length"},
+    "data_table": set(),
+}
 
 
 class FakeBackend:
@@ -32,6 +50,7 @@ class FakeBackend:
         self.task_polls: dict[str, int] = {}
         self.task_artifacts: dict[str, str] = {}
         self.artifacts: dict[str, dict[str, Artifact]] = {}
+        self.shares: dict[str, ShareStatus] = {}
         self._counters: dict[str, int] = {"nb": 0, "src": 0, "task": 0, "art": 0}
 
     def _next(self, prefix: str) -> str:
@@ -159,11 +178,32 @@ class FakeBackend:
 
     async def generate_artifact(self, req: GenerateRequest) -> TaskStatus:
         self._nb(req.notebook_id)
+        # Mirror the real backend's contract: unknown options (and a bad
+        # mind-map variant) are rejected instead of ignored.
+        allowed = _KIND_OPTIONS.get(req.kind)
+        if allowed is None:
+            raise invalid_argument(f"unsupported artifact kind {req.kind!r}")
+        unknown = set(req.options) - allowed
+        if unknown:
+            raise invalid_argument(f"unknown option(s) for this kind: {sorted(unknown)}")
+        variant = req.options.get("variant", "note_backed")
+        if req.kind == "mind_map" and variant not in ("note_backed", "interactive"):
+            raise invalid_argument(
+                f"invalid value {variant!r} for option 'variant' (note_backed or interactive)"
+            )
         tid = self._next("task")
         aid = self._next("art")
-        status = TaskStatus(task_id=tid, state="pending", artifact_id=None, error=None)
+        synchronous = (
+            req.kind == "mind_map" and req.options.get("variant", "note_backed") != "interactive"
+        )
+        status = TaskStatus(
+            task_id=tid,
+            state="completed" if synchronous else "pending",
+            artifact_id=aid if synchronous else None,
+            error=None,
+        )
         self.tasks[tid] = status
-        self.task_polls[tid] = 0
+        self.task_polls[tid] = 2 if synchronous else 0
         self.task_artifacts[tid] = aid
         self.artifacts[req.notebook_id][aid] = Artifact(
             id=aid,
@@ -203,7 +243,11 @@ class FakeBackend:
         return items
 
     async def download_artifact(
-        self, notebook_id: str, artifact_id: str, dest_path: str
+        self,
+        notebook_id: str,
+        artifact_id: str,
+        dest_path: str,
+        output_format: str | None = None,
     ) -> DownloadedFile:
         self._nb(notebook_id)
         if artifact_id not in self.artifacts[notebook_id]:
@@ -212,6 +256,52 @@ class FakeBackend:
         with open(dest_path, "wb") as fh:
             fh.write(b"fake")
         return DownloadedFile(artifact_id=artifact_id, path=dest_path, bytes=4)
+
+    async def get_artifact_options(self, notebook_id: str | None = None) -> ArtifactOptions:
+        def opt(kind: str, value: str, title: str) -> OptionChoice:
+            return OptionChoice(code=0, value=value, title=title, description=f"Fake {title}")
+
+        return ArtifactOptions(
+            audio=[opt("audio", v, v) for v in ("deep_dive", "brief", "critique", "debate")],
+            video=[opt("video", v, v) for v in ("explainer", "brief", "short")],
+            slide_deck=[opt("slide_deck", v, v) for v in ("detailed_deck", "presenter_slides")],
+            reports=[
+                ReportPreset(
+                    title="Fake Briefing Doc",
+                    description="fake preset",
+                    directive="Write a fake briefing doc.",
+                )
+            ],
+        )
+
+    async def get_share_status(self, notebook_id: str) -> ShareStatus:
+        self._nb(notebook_id)
+        return self.shares.get(notebook_id) or ShareStatus(
+            notebook_id=notebook_id,
+            is_public=False,
+            access="restricted",
+            view_level="full_notebook",
+            share_url=None,
+            shared_users=[],
+            is_public_sharing_allowed=True,
+        )
+
+    async def set_notebook_public(
+        self, notebook_id: str, public: bool, view_level: ShareLevel | None
+    ) -> ShareStatus:
+        current = await self.get_share_status(notebook_id)
+        status = current.model_copy(
+            update={
+                "is_public": public,
+                "access": "anyone_with_link" if public else "restricted",
+                "view_level": view_level or current.view_level,
+                "share_url": f"https://notebooklm.google.com/notebook/{notebook_id}"
+                if public
+                else None,
+            }
+        )
+        self.shares[notebook_id] = status
+        return status
 
     async def get_usage(self) -> Usage:
         return Usage(

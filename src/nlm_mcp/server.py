@@ -20,15 +20,19 @@ from nlm_mcp.tools.artifacts import register_artifact_tools
 from nlm_mcp.tools.chat import register_chat_tools
 from nlm_mcp.tools.notebooks import register_notebook_tools
 from nlm_mcp.tools.resources import register_resources
+from nlm_mcp.tools.sharing import register_sharing_tools
 from nlm_mcp.tools.sources import register_source_tools
 
 __all__ = ["SERVER_INSTRUCTIONS", "AppState", "create_server"]
 
 SERVER_INSTRUCTIONS = (
-    "Tools to read and manage Google NotebookLM notebooks: notebooks, sources, grounded chat "
-    "and generated artifacts (audio overview, report, study guide, quiz, flashcards). "
+    "Tools to read and manage Google NotebookLM notebooks: notebooks, sources, grounded chat, "
+    "generated artifacts (audio overview, report, study guide, quiz, flashcards, video, mind "
+    "map, infographic, slide deck, data table), artifact downloads in every format, the "
+    "account's artifact option tables and notebook public-link sharing. "
     "Notebook, source, task and artifact ids come from the list_* tools. "
-    "generate_artifact is asynchronous: it returns a task_id that must be polled with get_task. "
+    "generate_artifact is asynchronous: it returns a task_id that must be polled with get_task "
+    "(mind_map with variant=note_backed completes synchronously instead). "
     "Errors start with a [CODE] prefix; AUTH_REQUIRED means the user must run "
     "`notebooklm login` for the profile."
 )
@@ -87,6 +91,7 @@ def create_server(
     register_source_tools(server)
     register_chat_tools(server)
     register_artifact_tools(server)
+    register_sharing_tools(server)
     register_resources(server, state)
 
     if settings.tools:
