@@ -1,18 +1,18 @@
 <p align="center">
-  <img src=".github/assets/logo.svg" width="150" alt="nlm-mcp logo: a spiral notebook with Google-colored sparkles">
+  <img src=".github/assets/logo.svg" width="150" alt="notebooklm-mcp logo: a spiral notebook with Google-colored sparkles">
 </p>
 
-# nlm-mcp
+# notebooklm-mcp
 
 <p align="center">
-  <a href="https://github.com/fortil/nlm-mcp"><img src="https://img.shields.io/badge/github-fortil%2Fnlm--mcp-181717?logo=github" alt="github.com/fortil/nlm-mcp"></a>
+  <a href="https://github.com/fortil/notebooklm-mcp"><img src="https://img.shields.io/badge/github-fortil%2Fnotebooklm--mcp-181717?logo=github" alt="github.com/fortil/notebooklm-mcp"></a>
   <img src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license MIT">
   <img src="https://img.shields.io/badge/MCP-server-5F45AF" alt="MCP server">
   <img src="https://img.shields.io/badge/uv-ready-de5fe9?logo=uv" alt="uv">
 </p>
 
-An MCP server for Google NotebookLM (now branded "Gemini Notebook"). It exposes 16 tools and 2 resources for notebooks, sources, grounded chat and generated artifacts. It talks to Google through the unofficial `notebooklm-py` client, which calls private endpoints. Google's terms of service may not allow that kind of access, so use it with an account you can afford to lose.
+An MCP server for Google NotebookLM (now branded "Gemini Notebook"). It exposes 16 tools and 2 resources for notebooks, sources, grounded chat and generated artifacts. It talks to Google through the unofficial `notebooklm-py` client, which calls private endpoints. Google's terms of service may not allow that kind of access, so use it with an account you can afford to lose. The repo is named `notebooklm-mcp`; the command it installs is `nlm-mcp`.
 
 The tool layer never touches the SDK. All SDK code sits in `src/nlm_mcp/backends/notebooklm_py.py`, behind a `Backend` protocol, and a `FakeBackend` runs the whole tool surface without a Google account.
 
@@ -24,8 +24,8 @@ The tool layer never touches the SDK. All SDK code sits in `src/nlm_mcp/backends
 ## Install
 
 ```
-git clone https://github.com/fortil/nlm-mcp.git
-cd nlm-mcp
+git clone https://github.com/fortil/notebooklm-mcp.git
+cd notebooklm-mcp
 uv sync --extra browser
 ```
 
