@@ -11,7 +11,9 @@ dependencies = [
     # TODO: back to "notebooklm-py[headless]>=0.8.5,<0.9" once released. 0.8.4 saves
     # an empty session on fresh logins (teng-lin/notebooklm-py#2478, fixed on main).
     "notebooklm-py[headless] @ git+https://github.com/teng-lin/notebooklm-py@2aff0fcb27c1be734d720b409696fcd74c4ba604",
+    "pillow>=10.4,<12",
     "pydantic>=2.7,<3",
+    "pypdfium2>=4.30,<6",
 ]
 
 [project.optional-dependencies]
@@ -51,3 +53,7 @@ files = ["src"]
 module = ["notebooklm", "notebooklm.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = ["pypdfium2"]
+ignore_missing_imports = true

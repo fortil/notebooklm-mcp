@@ -1,5 +1,6 @@
 """Artifact tools and usage."""
 
+import logging
 import os
 
 from mcp.server.mcpserver import Context, MCPServer
@@ -24,6 +25,9 @@ from nlm_mcp.tools._common import (
     current_tenant,
     metered,
 )
+from nlm_mcp.watermark import strip_slide_deck_watermark
+
+_logger = logging.getLogger(__name__)
 
 _EXT = {
     "audio_overview": "m4a",
@@ -127,7 +131,8 @@ def register_artifact_tools(server: MCPServer) -> None:
             "Download a completed artifact to the server's download directory. dest_dir, if "
             "given, must be inside that directory. format selects the file type for kinds "
             "that have more than one: slide_deck pdf|pptx, quiz and flashcards "
-            "json|markdown|html."
+            "json|markdown|html. PDF downloads have the Gemini Notebook badge removed "
+            "automatically (watermark_removed says whether it happened)."
         ),
         annotations=MUTATING,
     )
@@ -163,7 +168,17 @@ def register_artifact_tools(server: MCPServer) -> None:
             ext = format
         os.makedirs(base, exist_ok=True)
         dest_path = os.path.join(base, f"{artifact_id}.{ext}")
-        return await backend.download_artifact(notebook_id, artifact_id, dest_path, format)
+        downloaded = await backend.download_artifact(notebook_id, artifact_id, dest_path, format)
+        if ext == "pdf" and settings.strip_watermark:
+            try:
+                size = strip_slide_deck_watermark(dest_path)
+            except Exception as e:  # noqa: BLE001 - the file is downloaded either way
+                _logger.warning("watermark strip failed for %s: %s", dest_path, e)
+            else:
+                downloaded = downloaded.model_copy(
+                    update={"watermark_removed": True, "bytes": size}
+                )
+        return downloaded
 
     @server.tool(
         name="get_artifact_options",

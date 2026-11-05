@@ -263,6 +263,8 @@ Read-only. Artifacts of a notebook with id, kind, state and creation time. Optio
 
 Saves a completed artifact under `NLM_MCP_DOWNLOAD_DIR` (optional `dest_dir` inside it). The file extension follows the kind; `format` picks between formats for the kinds that have more than one (`slide_deck`: pdf or pptx; `quiz` and `flashcards`: json, markdown or html).
 
+PDF downloads are rewritten in place to remove the "Gemini Notebook" badge: every page is re-rendered at 150 dpi, the badge box in the bottom-right corner is filled with the background color sampled around it, and the PDF is rebuilt at the same page size. The response reports it in `watermark_removed` (`true` on PDFs, `false` on everything else; if the rewrite fails the file is still returned unmodified with `false` and a warning is logged). Disable with `NLM_MCP_STRIP_WATERMARK=false`.
+
 ```json
 {"notebook_id": "abc", "artifact_id": "art-1", "format": "pptx"}
 ```
@@ -310,6 +312,7 @@ Read-only. Notebooks used against the account limit, source limit, five-hour and
 | `NLM_MCP_PORT` | `8765` | HTTP port |
 | `NLM_MCP_TOOLS` | all | Comma-separated tool allowlist |
 | `NLM_MCP_DOWNLOAD_DIR` | `~/.nlm-mcp/downloads` | Sandbox for `download_artifact` |
+| `NLM_MCP_STRIP_WATERMARK` | `true` | Remove the Gemini Notebook badge from downloaded PDFs |
 | `NLM_MCP_ALLOW_LOCAL_FILES` | true on stdio, false on HTTP | Allow `add_source` with `kind=file` |
 | `NLM_MCP_MAX_CONCURRENT_RPCS` | `4` | Concurrent SDK calls |
 | `NLM_MCP_USAGE_LOG` | unset | JSONL file for usage events |

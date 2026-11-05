@@ -365,9 +365,31 @@ async def run_scenario() -> int:
             )
             deck_dl_path = Path(deck_dl["path"])
             check(
-                deck_dl_path.suffix == ".pptx" and deck_dl_path.is_file(),
-                "download_artifact slide_deck pptx",
+                deck_dl_path.suffix == ".pptx"
+                and deck_dl_path.is_file()
+                and deck_dl["watermark_removed"] is False,
+                "download_artifact slide_deck pptx (no watermark step)",
                 deck_dl["path"],
+            )
+
+            deck_pdf = payload(
+                await session.call_tool(
+                    "download_artifact",
+                    {
+                        "notebook_id": nb_id,
+                        "artifact_id": deck_done["artifact_id"],
+                        "format": "pdf",
+                    },
+                )
+            )
+            deck_pdf_path = Path(deck_pdf["path"])
+            header = deck_pdf_path.read_bytes()[:5]
+            check(
+                deck_pdf["watermark_removed"] is True
+                and deck_pdf_path.is_file()
+                and header == b"%PDF-",
+                "download_artifact slide_deck pdf loses the Gemini Notebook badge",
+                json.dumps(deck_pdf),
             )
 
             bad_fmt = await session.call_tool(

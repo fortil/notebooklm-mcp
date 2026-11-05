@@ -22,6 +22,7 @@ class Settings:
     port: int = 8765
     tools: frozenset[str] = frozenset()
     download_dir: Path = Path("~/.nlm-mcp/downloads").expanduser()
+    strip_watermark: bool = True
     allow_local_files: bool = True
     max_concurrent_rpcs: int = 4
     usage_log: Path | None = None
@@ -64,6 +65,8 @@ class Settings:
         allow_files = _bool(raw_files) if raw_files else transport == "stdio"
 
         download_dir = Path(e.get("NLM_MCP_DOWNLOAD_DIR") or "~/.nlm-mcp/downloads").expanduser()
+        raw_strip = e.get("NLM_MCP_STRIP_WATERMARK")
+        strip_watermark = _bool(raw_strip) if raw_strip is not None else True
         usage_log = e.get("NLM_MCP_USAGE_LOG")
         tokens_file = e.get("NLM_MCP_TOKENS_FILE")
 
@@ -81,6 +84,7 @@ class Settings:
             port=port,
             tools=tools,
             download_dir=download_dir,
+            strip_watermark=strip_watermark,
             allow_local_files=allow_files,
             max_concurrent_rpcs=max_rpcs,
             usage_log=Path(usage_log).expanduser() if usage_log else None,

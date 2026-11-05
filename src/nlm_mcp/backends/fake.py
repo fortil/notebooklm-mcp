@@ -27,6 +27,31 @@ from nlm_mcp.models import (
     Usage,
 )
 
+
+def _minimal_slide_deck_pdf() -> bytes:
+    """A minimal one-page PDF, just valid enough for the watermark strip to run on it."""
+    width, height = 720, 540
+    bodies = [
+        "<< /Type /Catalog /Pages 2 0 R >>",
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width} {height}] >>",
+    ]
+    out = bytearray(b"%PDF-1.4\n")
+    offsets: list[int] = []
+    for i, body in enumerate(bodies, start=1):
+        offsets.append(len(out))
+        out += f"{i} 0 obj\n{body}\nendobj\n".encode()
+    xref_pos = len(out)
+    out += f"xref\n0 {len(bodies) + 1}\n".encode()
+    out += b"0000000000 65535 f \n"
+    out += "".join(f"{off:010d} 00000 n \n" for off in offsets).encode()
+    out += (
+        f"trailer\n<< /Size {len(bodies) + 1} /Root 1 0 R >>\n"
+        f"startxref\n{xref_pos}\n%%EOF\n"
+    ).encode()
+    return bytes(out)
+
+
 _KIND_OPTIONS: dict[str, set[str]] = {
     "audio_overview": {"format", "length"},
     "video": {"format", "style", "style_prompt"},
@@ -253,9 +278,12 @@ class FakeBackend:
         if artifact_id not in self.artifacts[notebook_id]:
             raise not_found("artifact", artifact_id)
         os.makedirs(os.path.dirname(dest_path) or ".", exist_ok=True)
+        kind = self.artifacts[notebook_id][artifact_id].kind
+        is_pdf = kind == "slide_deck" and output_format in (None, "pdf")
+        data = _minimal_slide_deck_pdf() if is_pdf else b"fake"
         with open(dest_path, "wb") as fh:
-            fh.write(b"fake")
-        return DownloadedFile(artifact_id=artifact_id, path=dest_path, bytes=4)
+            fh.write(data)
+        return DownloadedFile(artifact_id=artifact_id, path=dest_path, bytes=len(data))
 
     async def get_artifact_options(self, notebook_id: str | None = None) -> ArtifactOptions:
         def opt(kind: str, value: str, title: str) -> OptionChoice:
