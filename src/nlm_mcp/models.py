@@ -162,6 +162,7 @@ class DownloadedFile(_Model):
     artifact_id: str
     path: str
     bytes: int
+    watermark_removed: bool = False
 
 
 class Deleted(_Model):
